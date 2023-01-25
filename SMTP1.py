@@ -12,15 +12,18 @@ SP = (" ", "\t")
 ALPHA = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 DIGIT = "0123456789"
 
-stream = []
-next_char = ""
+stream = []  # iterator for stdin
+next_char = ""  # 1 character lookahead
 state = 0  # 0 = expecting mail from , 1 = expecting rcpt to, 2 = expecting rcpt to or data, 3 = expecting data body
-forward_paths = []
-data = ""
-buffer = ""
+forward_paths = set()  # set of unique forward paths
+path_buffer = ""  # temporary buffer for forward paths
+get_path = False  # flag to insert to path_buffer
+data = ""  # temporary buffer for data
+data_buffer = ""  # temporary buffer for detecting end of data message
+
 
 def main():
-    global stream, next_char, state, forward_paths, data, buffer
+    global stream, next_char, state, forward_paths, path_buffer, data, data_buffer
     for line in sys.stdin:
         print(line, end="")
         global stream, next_char
@@ -33,15 +36,17 @@ def main():
         - [x] Save data body
         - [x] Write data body to intended forward paths
         """
-        # TODO: write to socket
         if state == 3:
-            # TODO: implement data body recognition
             res = read_data()
             if res != "":
                 # found proper end of message
-                for path in forward_paths:
-                    with open(f"./forward/{path}", "a+") as fp:
+                # TODO: remove debug
+                forward_paths = ["example1@unc.edu", "example2@unc.edu", "example3@unc.edu"]
+                for fpath in forward_paths:
+                    with open(f"./forward/{fpath}", "a+") as fp:
                         fp.write(res + "\n")
+                print(code(250))
+                forward_paths = []
         else:
             res = recognize_cmd()
             command = res[0]
@@ -60,6 +65,7 @@ def main():
                     case "DATA":
                         state = 3
                 print(exit_code)
+            path_buffer = ""
 
 
 def tokenizer_debug(token_name: str):
@@ -123,25 +129,25 @@ def recognize_cmd() -> (list, str):  # returns tuple of (command, exit code)
 
 
 def read_data() -> str:
-    global next_char, data, buffer
+    global next_char, data, data_buffer
     # buffer so we don't attach <CRLF>.<CRLF> to data
-    while buffer != "\n.\n":
-        valid_crlf = next_char == "\n" and (len(buffer) in [0, 2])
-        valid_period = next_char == "." and len(buffer) == 1
+    while data_buffer != "\n.\n":
+        valid_crlf = next_char == "\n" and (len(data_buffer) in [0, 2])
+        valid_period = next_char == "." and len(data_buffer) == 1
         if valid_crlf or valid_period:
-            buffer += next_char
+            data_buffer += next_char
             put_next()
         elif next_char == "":
             return ""
         else:
-            # invalid ending seen, clear the buffer
-            data += buffer
-            buffer = ""
+            # invalid ending seen, add buffer to data and clear it
+            data += data_buffer
+            data_buffer = ""
             # after clearing the buffer, insert the next char
             data += next_char
             put_next()
     # buffer was correct ending, so reset buffer and return data
-    buffer = ""
+    data_buffer = ""
     out = data
     data = ""  # ensure data line is cleared before next data is read
     return out
