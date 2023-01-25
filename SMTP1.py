@@ -155,30 +155,10 @@ def read_data() -> str:
 
 def mail_from_cmd():
     # <mail-from-cmd> ::= "MAIL" <whitespace> "FROM:" <nullspace> <reverse-path> <nullspace> <CRLF>
-    if not consume_str("MAIL"):
+    if not consume_str("MAIL") or whitespace() or not consume_str("FROM:"):
         return code(500)
 
-    res = whitespace()
-    if res != "":
-        return code(500)
-
-    if not consume_str("FROM:"):
-        return code(500)
-
-    res = nullspace()
-    if res != "":
-        return code(501)
-
-    res = reverse_path()
-    if res != "":
-        return code(501)
-
-    res = nullspace()
-    if res != "":
-        return code(501)
-
-    res = crlf()
-    if res != "":
+    if nullspace() or reverse_path() or nullspace() or crlf():
         return code(501)
 
     return code(250)
@@ -373,25 +353,10 @@ def special():
 
 def rcpt_to_cmd():
     # <rcpt-to-cmd> ::= ["RCPT"] <whitespace> "TO:" <nullspace> <forward-path> <nullspace> <CRLF>
-    if not consume_str("RCPT"):
+    if not consume_str("RCPT") or whitespace() or not consume_str("TO:"):
         return code(500)
 
-    if whitespace() != "":
-        return code(500)
-
-    if not consume_str("TO:"):
-        return code(500)
-
-    if nullspace() != "":
-        return code(501)
-
-    if forward_path() != "":
-        return code(501)
-
-    if nullspace() != "":
-        return code(501)
-
-    if crlf() != "":
+    if nullspace() or forward_path() or nullspace() or crlf():
         return code(501)
 
     return code(250)
@@ -404,13 +369,7 @@ def forward_path():
 
 def data_cmd():
     # <data-cmd> ::= "DATA" <nullspace> <CRLF>
-    if not consume_str("DATA"):
-        return code(500)
-
-    if nullspace() != "":
-        return code(500)
-
-    if crlf() != "":
+    if not consume_str("DATA") or nullspace() or crlf():
         return code(500)
 
     return code(354)
