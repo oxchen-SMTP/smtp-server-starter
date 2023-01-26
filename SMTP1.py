@@ -12,7 +12,7 @@ SP = (" ", "\t")
 ALPHA = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 DIGIT = "0123456789"
 
-stream = []  # iterator for stdin
+stream = iter([])  # iterator for stdin
 next_char = ""  # 1 character lookahead
 state = 0  # 0 = expecting mail from , 1 = expecting rcpt to, 2 = expecting rcpt to or data, 3 = expecting data body
 forward_paths = set()  # set of unique forward paths
@@ -39,7 +39,7 @@ def main():
         """
         if state == 3:
             res = read_data()
-            if res != "NOT EOF":
+            if res is not None:
                 # found proper end of message
                 for fpath in forward_paths:
                     with open(f"./forward/{fpath}", "a+") as fp:
@@ -131,7 +131,7 @@ def recognize_cmd() -> (list, str):  # returns tuple of (command, exit code)
     return "UNRECOGNIZED", [0, 1, 2], code(500)
 
 
-def read_data() -> str:
+def read_data():
     global next_char, data, data_buffer
     # buffer so we don't attach <CRLF>.<CRLF> to data
     while data_buffer != "\n.\n":
@@ -141,7 +141,7 @@ def read_data() -> str:
             data_buffer += next_char
             put_next()
         elif next_char == "":
-            return "NOT EOF"
+            return None
         else:
             # invalid ending seen, add buffer to data and clear it
             data += data_buffer
