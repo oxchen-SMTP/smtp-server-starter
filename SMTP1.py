@@ -26,27 +26,27 @@ def main():
     global stream, next_char, state, forward_paths, path_buffer, data, data_buffer
     for line in sys.stdin:
         print(line, end="")
+        # print(f"{state=}")
         global stream, next_char
         stream = iter(line)
         put_next()
         """
         Requirements:
-        - [ ] Save forward-path
-        - [ ] Access and write to each of forward/forward-path
+        - [x] Save forward-path
+        - [x] Access and write to each of forward/forward-path
         - [x] Save data body
         - [x] Write data body to intended forward paths
         """
         if state == 3:
             res = read_data()
-            if res != "":
+            if res != "NOT EOF":
                 # found proper end of message
-                # TODO: remove debug
-                forward_paths = ["example1@unc.edu", "example2@unc.edu", "example3@unc.edu"]
                 for fpath in forward_paths:
                     with open(f"./forward/{fpath}", "a+") as fp:
                         fp.write(res + "\n")
                 print(code(250))
-                forward_paths = []
+                forward_paths = set()
+                state = 0
         else:
             res = recognize_cmd()
             command = res[0]
@@ -64,8 +64,9 @@ def main():
                         state = 2
                     case "DATA":
                         state = 3
+                    case _:
+                        state = 0
                 print(exit_code)
-            path_buffer = ""
 
 
 def tokenizer_debug(token_name: str):
@@ -95,7 +96,9 @@ def code(num: int) -> str:
 
 
 def put_next():
-    global stream, next_char
+    global stream, next_char, get_path, path_buffer
+    if get_path:
+        path_buffer += next_char
     try:
         next_char = next(stream)
     except StopIteration:
@@ -138,7 +141,7 @@ def read_data() -> str:
             data_buffer += next_char
             put_next()
         elif next_char == "":
-            return ""
+            return "NOT EOF"
         else:
             # invalid ending seen, add buffer to data and clear it
             data += data_buffer
@@ -217,6 +220,7 @@ def path():
 
 def mailbox():
     # <mailbox> ::= <local-part> "@" <domain>
+    global get_path, forward_paths, path_buffer
     res = local_part()
     if res != "":
         return res
@@ -228,6 +232,10 @@ def mailbox():
     if res != "":
         return res
 
+    if get_path:
+        forward_paths.add(path_buffer.strip("<>"))
+        path_buffer = ""
+        get_path = False
     return ""
 
 
@@ -364,6 +372,8 @@ def rcpt_to_cmd():
 
 def forward_path():
     # <forward-path> ::= <path>
+    global get_path
+    get_path = True
     return path()
 
 
