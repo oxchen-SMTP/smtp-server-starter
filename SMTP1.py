@@ -15,15 +15,17 @@ DIGIT = "0123456789"
 stream = iter([])  # iterator for stdin
 next_char = ""  # 1 character lookahead
 state = 0  # 0 = expecting mail from , 1 = expecting rcpt to, 2 = expecting rcpt to or data, 3 = expecting data body
-forward_paths = set()  # set of unique forward paths
+reverse_path_str = ""  # backward path
+get_reverse_path = False  # flag to insert to path_buffer
+forward_path_strs = list()  # set of unique forward paths
+get_forward_path = False  # flag to insert to path_buffer
 path_buffer = ""  # temporary buffer for forward paths
-get_path = False  # flag to insert to path_buffer
 data = ""  # temporary buffer for data
 data_buffer = ""  # temporary buffer for detecting end of data message
 
 
 def main():
-    global stream, next_char, state, forward_paths, path_buffer, data, data_buffer
+    global stream, next_char, state, forward_path_strs, path_buffer, data, data_buffer, reverse_path_str
     for line in sys.stdin:
         print(line, end="")
         # print(f"{state=}")
@@ -36,16 +38,23 @@ def main():
         - [x] Access and write to each of forward/forward-path
         - [x] Save data body
         - [x] Write data body to intended forward paths
+        - [x] Save backward-path
+        - [ ] Append backward path to beginning of files
+        - [ ] Append forward paths to beginning of files
         """
         if state == 3:
             res = read_data()
             if res is not None:
                 # found proper end of message
-                for fpath in forward_paths:
+                fpath_to_strs = "\n".join([f"To: <{fpath}>" for fpath in forward_path_strs])
+                for fpath in forward_path_strs:
                     with open(f"./forward/{fpath}", "a+") as fp:
+                        fp.write(f"From: <{reverse_path_str}>\n")
+                        fp.write(fpath_to_strs + "\n")
                         fp.write(res + "\n")
                 print(code(250))
-                forward_paths = set()
+                forward_path_strs = list()
+                reverse_path_str = ""
                 state = 0
         else:
             res = recognize_cmd()
@@ -54,6 +63,7 @@ def main():
             exit_code = res[2]
 
             if state not in states:
+                print(f"{state=}, {states=}")
                 print(code(503))
                 state = 0
             else:
@@ -96,8 +106,8 @@ def code(num: int) -> str:
 
 
 def put_next():
-    global stream, next_char, get_path, path_buffer
-    if get_path:
+    global stream, next_char, get_forward_path, path_buffer
+    if get_forward_path or get_reverse_path:
         path_buffer += next_char
     try:
         next_char = next(stream)
@@ -119,13 +129,13 @@ def consume_str(s: str) -> bool:
 
 
 def recognize_cmd() -> (list, str):  # returns tuple of (command, exit code)
-    if next_char == "M":
+    if consume_str("MAIL") and not whitespace() and consume_str("FROM:"):
         return "MAIL", [0], mail_from_cmd()
 
-    if next_char == "R":
+    if consume_str("RCPT") and not whitespace() and consume_str("TO:"):
         return "RCPT", [1, 2], rcpt_to_cmd()
 
-    if next_char == "D":
+    if consume_str("DATA") and not nullspace() and not crlf():
         return "DATA", [2], data_cmd()
 
     return "UNRECOGNIZED", [0, 1, 2], code(500)
@@ -158,8 +168,7 @@ def read_data():
 
 def mail_from_cmd():
     # <mail-from-cmd> ::= "MAIL" <whitespace> "FROM:" <nullspace> <reverse-path> <nullspace> <CRLF>
-    if not consume_str("MAIL") or whitespace() or not consume_str("FROM:"):
-        return code(500)
+    # already recognized command
 
     if nullspace() or reverse_path() or nullspace() or crlf():
         return code(501)
@@ -200,6 +209,9 @@ def null():
 
 def reverse_path():
     # <reverse-path> ::= <path>
+    global get_reverse_path, path_buffer
+    path_buffer = ""
+    get_reverse_path = True
     return path()
 
 
@@ -220,7 +232,7 @@ def path():
 
 def mailbox():
     # <mailbox> ::= <local-part> "@" <domain>
-    global get_path, forward_paths, path_buffer
+    global get_forward_path, forward_path_strs, get_reverse_path, reverse_path_str, path_buffer
     res = local_part()
     if res != "":
         return res
@@ -232,10 +244,14 @@ def mailbox():
     if res != "":
         return res
 
-    if get_path:
-        forward_paths.add(path_buffer.strip("<>"))
+    if get_forward_path:
+        forward_path_strs.append(path_buffer.strip("<>"))
         path_buffer = ""
-        get_path = False
+        get_forward_path = False
+    if get_reverse_path:
+        reverse_path_str = path_buffer.strip("<>")
+        path_buffer = ""
+        get_reverse_path = False
     return ""
 
 
@@ -361,8 +377,7 @@ def special():
 
 def rcpt_to_cmd():
     # <rcpt-to-cmd> ::= ["RCPT"] <whitespace> "TO:" <nullspace> <forward-path> <nullspace> <CRLF>
-    if not consume_str("RCPT") or whitespace() or not consume_str("TO:"):
-        return code(500)
+    # Already recognized command
 
     if nullspace() or forward_path() or nullspace() or crlf():
         return code(501)
@@ -372,16 +387,14 @@ def rcpt_to_cmd():
 
 def forward_path():
     # <forward-path> ::= <path>
-    global get_path
-    get_path = True
+    global get_forward_path, path_buffer
+    path_buffer = ""
+    get_forward_path = True
     return path()
 
 
 def data_cmd():
     # <data-cmd> ::= "DATA" <nullspace> <CRLF>
-    if not consume_str("DATA") or nullspace() or crlf():
-        return code(500)
-
     return code(354)
 
 
